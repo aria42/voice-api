@@ -2,26 +2,56 @@ package com.pragmaticideal.voiceapi.cfg
 
 import scala.collection.mutable
 
-case class Rule[S](val parent: S,  val children: Seq[S], val score: Double = 0.0) {
-  // rules are unary or binary only
-  require(children.length == 1 || children.length == 2)
-  def isUnary = children.length == 1
-  def isBinary = children.length == 2
-  def leftmostChild = children.head
-  def rightmostChild = children.last
+trait Rule[S] {
+  def parent: S
+  def children: Seq[S]
+  def score: Double
 }
 
-class Grammar[S](val root: S, val rules: Seq[Rule[S]]) {
-  require(rules.filter(_.parent == root).nonEmpty, s"Grammar needs some rule with root $root as parent")
+case class BinaryRule[S](override val parent: S,
+                         val leftChild: S,
+                         val rightChild: S,
+                         override val score: Double = 0.0) extends Rule[S] {
+  override def children = Seq(leftChild, rightChild)
+}
+
+case class UnaryRule[S](override val parent: S,
+                        val child: S,
+                        override val score: Double = 0.0) extends Rule[S] {
+  override def children = Seq(child)
+}
+
+case class NAryRule[S](override val parent: S,
+                       override val children: Seq[S],
+                       override val score: Double = 0.0) extends Rule[S]
+
+trait Grammar[S] {
+  def root: S
+  def rules: Seq[Rule[S]]
+}
+case class BinaryGrammar[S](override val root: S,
+                            val unaryRules: Seq[UnaryRule[S]],
+                            val binaryRules: Seq[BinaryRule[S]]) extends Grammar[S] {
+  type UR = UnaryRule[S]
+  type BR = BinaryRule[S]
   // Index rules by children states
-  val unarysByChild: Map[S, Seq[Rule[S]]] = rules.filter(_.isUnary).groupBy(_.leftmostChild)
-  val binarysByLeftmost: Map[S, Seq[Rule[S]]] = rules.filter(_.isBinary).groupBy(_.leftmostChild)
-  val binarysByRightmost: Map[S , Seq[Rule[S]]] = rules.filter(_.isBinary).groupBy(_.rightmostChild)
+  val unarysByChild: Map[S, Seq[UR]] = unaryRules.groupBy(_.child)
+  val binarysByLefChild: Map[S, Seq[BR]] = binaryRules.groupBy(_.leftChild)
+  val binarysByRightmost: Map[S , Seq[BR]] = binaryRules.groupBy(_.rightChild)
+  override def rules = unaryRules ++ binaryRules
 }
 
 // convenience factory to be able to use X -> Y syntax for unweighted grammars
-object Grammar {
-  def apply[S](root: S, xs: (S, Seq[S])*) = new Grammar(root, xs.map(t => Rule(t._1, t._2)))
+object UnweightedBinaryGrammar {
+  def apply[S](root: S, xs: (S, Seq[S])*): BinaryGrammar[S] = {
+    val unaryRules = xs.filter(_._2.length == 1).map {
+      case (parent, Seq(child)) => UnaryRule[S](parent, child)
+    }
+    val binaryRules = xs.filter(_._2.length == 2).map {
+      case (parent, Seq(left, right)) => BinaryRule(parent, left, right)
+    }
+    BinaryGrammar(root, unaryRules, binaryRules)
+  }
 }
 
 // Tree Abstraction
@@ -44,7 +74,7 @@ trait Parser[S]  {
   def parse(sentence: Seq[S]): Option[Tree[S]]
 }
 
-class AgendaParser[S](val grammar: Grammar[S]) extends Parser[S] {
+class AgendaParser[S](val grammar: BinaryGrammar[S]) extends Parser[S] {
 
   case class Edge(val tree: Tree[S], val span: (Int, Int), val score: Double) {
     def signature = EdgeSignature(tree.state, span)
@@ -66,40 +96,42 @@ class AgendaParser[S](val grammar: Grammar[S]) extends Parser[S] {
       }
     }
     // base case: discover terminal edges
-    for {
+    val terminalEdges = for {
       (s, idx) <- sentence.zipWithIndex
       leaf = Leaf(s)
-      r <- grammar.unarysByChild(s)
-    } discoverEdge(Edge(leaf, (idx, idx+1), r.score))
+      r <- grammar.unarysByChild.getOrElse(s, Seq())
+    } yield Edge(leaf, (idx, idx+1), r.score)
+    terminalEdges.foreach(discoverEdge)
     val goalSignature = EdgeSignature(grammar.root, (0, n))
     // finished when we have a goal edge or out of edges
     def isFinished = agenda.headOption.map(_.signature == goalSignature).getOrElse(true)
     while (!isFinished) {
       val e = agenda.dequeue
       // unary expansion bottom-up
-      for (r <- grammar.unarysByChild.getOrElse(e.tree.state, Seq())) {
-        val newTree = Branch(r.parent, Seq(e.tree))
-        discoverEdge(Edge(newTree, e.span, e.score + r.score))
-      }
+      val unaryExpansion = for {
+        r <- grammar.unarysByChild.getOrElse(e.tree.state, Seq())
+        newTree = Branch(r.parent, Seq(e.tree))
+      } yield Edge(newTree, e.span, e.score + r.score)
       val (start, stop) = e.span
       // expand to right (start, stop) + (stop, laterStop)
-      for {
-        r <- grammar.binarysByLeftmost.getOrElse(e.tree.state, Seq())
+      val rightBinaryExpansion = for {
+        r <- grammar.binarysByLefChild.getOrElse(e.tree.state, Seq())
         laterStop <- stop to n
-        rightEdge <- chart.get(EdgeSignature(r.rightmostChild, (stop, laterStop)))
+        rightEdge <- chart.get(EdgeSignature(r.rightChild, (stop, laterStop)))
         newScore = r.score + e.score + rightEdge.score
         newTree = Branch(r.parent, Seq(e.tree, rightEdge.tree))
-        newEdge = Edge(newTree, (start, laterStop), newScore)
-      } discoverEdge(newEdge)
+      } yield Edge(newTree, (start, laterStop), newScore)
       // expand to left (earlierStart, start) + (start, stop)
-      for {
+      val leftBinaryExpansion = for {
         r <- grammar.binarysByRightmost.getOrElse(e.tree.state, Seq())
         earlierStart <- 0 until start
-        leftEdge <- chart.get(EdgeSignature(r.leftmostChild, (earlierStart, start)))
+        leftEdge <- chart.get(EdgeSignature(r.leftChild, (earlierStart, start)))
         newScore = r.score + e.score + leftEdge.score
         newTree = Branch(r.parent, Seq(leftEdge.tree, e.tree))
-        newEdge = Edge(newTree, (earlierStart, stop), newScore)
-      } discoverEdge(newEdge)
+      } yield Edge(newTree, (earlierStart, stop), newScore)
+
+      val allNewEdges = unaryExpansion ++ rightBinaryExpansion ++ leftBinaryExpansion
+      allNewEdges.foreach(discoverEdge)
     }
     chart.get(goalSignature).map(_.tree)
   }

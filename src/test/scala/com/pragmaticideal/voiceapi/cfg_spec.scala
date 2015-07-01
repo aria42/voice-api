@@ -9,7 +9,7 @@ class CFGParserSpec extends FlatSpec with Matchers {
       val A, APlus, B, BPlus, Root = Value
     }
     import State._
-    val grammar = Grammar(Root,
+    val grammar = UnweightedBinaryGrammar(Root,
       Root -> Seq(APlus, BPlus),
       APlus -> Seq(A, APlus),
       APlus -> Seq(A),
