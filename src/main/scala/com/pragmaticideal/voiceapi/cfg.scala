@@ -2,36 +2,44 @@ package com.pragmaticideal.voiceapi.cfg
 
 import scala.collection.mutable
 
-trait Rule[S] {
+trait State {
+  def isTerminal = false
+}
+
+trait Rule[S <: State] {
   def parent: S
   def children: Seq[S]
   def score: Double
 }
 
-case class BinaryRule[S](override val parent: S,
-                         val leftChild: S,
-                         val rightChild: S,
-                         override val score: Double = 0.0) extends Rule[S] {
+case class BinaryRule[S <: State](
+  override val parent: S,
+  val leftChild: S,
+  val rightChild: S,
+  override val score: Double = 0.0) extends Rule[S] {
   override def children = Seq(leftChild, rightChild)
 }
 
-case class UnaryRule[S](override val parent: S,
-                        val child: S,
-                        override val score: Double = 0.0) extends Rule[S] {
+case class UnaryRule[S <: State](
+      override val parent: S,
+      val child: S,
+      override val score: Double = 0.0) extends Rule[S] {
   override def children = Seq(child)
 }
 
-case class NAryRule[S](override val parent: S,
-                       override val children: Seq[S],
-                       override val score: Double = 0.0) extends Rule[S]
+case class NAryRule[S <: State](
+      override val parent: S,
+      override val children: Seq[S],
+      override val score: Double = 0.0) extends Rule[S]
 
-trait Grammar[S] {
+trait Grammar[S <: State] {
   def root: S
   def rules: Seq[Rule[S]]
 }
-case class BinaryGrammar[S](override val root: S,
-                            val unaryRules: Seq[UnaryRule[S]],
-                            val binaryRules: Seq[BinaryRule[S]]) extends Grammar[S] {
+case class BinaryGrammar[S <: State](
+      override val root: S,
+      val unaryRules: Seq[UnaryRule[S]],
+      val binaryRules: Seq[BinaryRule[S]]) extends Grammar[S] {
   type UR = UnaryRule[S]
   type BR = BinaryRule[S]
   // Index rules by children states
@@ -43,7 +51,7 @@ case class BinaryGrammar[S](override val root: S,
 
 // convenience factory to be able to use X -> Y syntax for unweighted grammars
 object UnweightedBinaryGrammar {
-  def apply[S](root: S, xs: (S, Seq[S])*): BinaryGrammar[S] = {
+  def apply[S <: State](root: S, xs: (S, Seq[S])*): BinaryGrammar[S] = {
     val unaryRules = xs.filter(_._2.length == 1).map {
       case (parent, Seq(child)) => UnaryRule[S](parent, child)
     }
@@ -55,37 +63,46 @@ object UnweightedBinaryGrammar {
 }
 
 // Tree Abstraction
-abstract class Tree[S](val state: S, val children: Seq[Tree[S]]) {
+abstract class Tree[S <: State](val state: S, val children: Seq[Tree[S]]) {
   def leaves: Seq[S]
 }
 
-case class Leaf[S](override val state: S) extends Tree[S](state, Seq()) {
+case class Leaf[S <: State](override val state: S) extends Tree[S](state, Seq()) {
   override def leaves = Seq(state)
 }
 
-case class Branch[S](override val state: S, override val children: Seq[Tree[S]])
+case class Branch[S <: State](override val state: S, override val children: Seq[Tree[S]])
   extends Tree[S](state, children)
 {
   override def leaves = children.flatMap(_.leaves)
 }
 
 // Parser
-trait Parser[S]  {
-  def parse(sentence: Seq[S]): Option[Tree[S]]
+trait Parser[S <: State]  {
+
+  def parse(weightedSentence: Seq[Map[S, Double]]): Option[(Tree[S], Double)]
+
+  /**
+   * If we have no uncertainty about the states associated with tokens,
+   * we can use this convenience method
+   */
+  def parseSentence(sentence: Seq[S]): Option[(Tree[S], Double)] = parse(sentence.map(s => Map(s -> 0.0)))
 }
 
-class AgendaParser[S](val grammar: BinaryGrammar[S]) extends Parser[S] {
+class AgendaParser[S <: State](val grammar: BinaryGrammar[S]) extends Parser[S] {
 
   case class Edge(val tree: Tree[S], val span: (Int, Int), val score: Double) {
     def signature = EdgeSignature(tree.state, span)
+    def length = span._2 - span._1
   }
 
   case class EdgeSignature(val state: S, val span: (Int, Int))
 
-  override def parse(sentence: Seq[S]): Option[Tree[S]] = {
+  override def parse(sentence: Seq[Map[S, Double]]): Option[(Tree[S], Double)] = {
     val n = sentence.length
-    // Agenda is a PQ on edges priortized on higher scores
-    val agenda = mutable.PriorityQueue[Edge]()(Ordering.by(_.score))
+    // Agenda is a PQ on edges priortized on span size, then on score
+    val edgeOrdering = Ordering.by((e: Edge) => (e.length, -e.score))
+    val agenda = mutable.PriorityQueue[Edge]()(edgeOrdering)
     // Chart stores best (first-encountered) derivation of EdgeSignature
     val chart = mutable.Map[EdgeSignature, Edge]()
     // If you discover a new edge, add it to chart/agenda, explore later
@@ -97,10 +114,10 @@ class AgendaParser[S](val grammar: BinaryGrammar[S]) extends Parser[S] {
     }
     // base case: discover terminal edges
     val terminalEdges = for {
-      (s, idx) <- sentence.zipWithIndex
+      (wmap, idx) <- sentence.zipWithIndex
+      (s, weight) <- wmap
       leaf = Leaf(s)
-      r <- grammar.unarysByChild.getOrElse(s, Seq())
-    } yield Edge(leaf, (idx, idx+1), r.score)
+    } yield Edge(leaf, (idx, idx+1), weight)
     terminalEdges.foreach(discoverEdge)
     val goalSignature = EdgeSignature(grammar.root, (0, n))
     // finished when we have a goal edge or out of edges
@@ -133,6 +150,6 @@ class AgendaParser[S](val grammar: BinaryGrammar[S]) extends Parser[S] {
       val allNewEdges = unaryExpansion ++ rightBinaryExpansion ++ leftBinaryExpansion
       allNewEdges.foreach(discoverEdge)
     }
-    chart.get(goalSignature).map(_.tree)
+    chart.get(goalSignature).map(e => (e.tree, e.score))
   }
 }

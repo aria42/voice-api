@@ -4,21 +4,25 @@ import org.scalatest.{Matchers, FlatSpec}
 
 class CFGParserSpec extends FlatSpec with Matchers {
   "An agenda parser" should "parse a A+B+ simple grammar" in {
-    object State extends Enumeration {
-      type State = Value
-      val A, APlus, B, BPlus, Root = Value
+
+    abstract class MyState(terminal: Boolean = false) extends State {
+      override def isTerminal = terminal
     }
-    import State._
+    object A extends MyState(true)
+    object B extends MyState(true)
+    object APlus extends MyState()
+    object BPlus extends MyState()
+    object Root extends MyState()
+
     val grammar = UnweightedBinaryGrammar(Root,
       Root -> Seq(APlus, BPlus),
       APlus -> Seq(A, APlus),
       APlus -> Seq(A),
       BPlus -> Seq(B, BPlus),
       BPlus -> Seq(B))
-    val p: Parser[State] = new AgendaParser(grammar)
+    val p = new AgendaParser(grammar)
     val sent= Seq(A, B, B, B)
-    val tree = p.parse(sent)
-    tree.isDefined shouldBe true
-    tree.get.leaves shouldBe sent
+    val (tree, weight) = p.parseSentence(sent).get
+    tree.leaves shouldBe sent
   }
 }
