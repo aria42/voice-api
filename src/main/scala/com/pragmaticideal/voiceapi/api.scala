@@ -35,9 +35,8 @@ object SlopPhraseGrammar {
       // Root -> SlopPhrase(phrase, numJunk)
       rules += UnaryRule(SlopPhraseRoot, SlopPhrase(phrase, numJunk), weight - numJunk * junkPenalty)
     }
-    if (phrase.length == 1) {
-      rules += UnaryRule(SlopPhrase(phrase, 0), PhraseToken(phrase(0)))
-    }
+    // The grammar is left binarizing so need a special unary for rightmost token
+    rules += UnaryRule(SlopPhrase(Seq(phrase.last), 0), PhraseToken(phrase.last))
     // Two types of binary rules
     // Take an existing partial phrase and add a right junk token
     rules ++= (for {

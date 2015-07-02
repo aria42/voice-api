@@ -35,6 +35,10 @@ case class NAryRule[S <: State](
 trait Grammar[S <: State] {
   def root: S
   def rules: Seq[Rule[S]]
+  def states: Set[S] = (for {
+    r <- rules
+    s <- r.parent +: r.children
+  } yield s).toSet
 }
 case class BinaryGrammar[S <: State](
       override val root: S,
@@ -111,6 +115,12 @@ class AgendaParser[S <: State](val grammar: BinaryGrammar[S]) extends Parser[S] 
         chart.put(edge.signature, edge)
         agenda += edge
       }
+    }
+    for (stateMap <- sentence; (state, weight) <- stateMap) {
+      require( grammar.unarysByChild.contains(state) ||
+               grammar.binarysByLefChild.contains(state) ||
+               grammar.binarysByRightmost.contains(state),
+        s"State $state not in grammar")
     }
     // base case: discover terminal edges
     val terminalEdges = for {
