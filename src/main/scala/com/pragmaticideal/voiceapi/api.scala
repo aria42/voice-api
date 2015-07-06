@@ -79,3 +79,18 @@ object SlopPhraseGrammar {
     BinaryGrammar(root, unaryRules.toSeq, binaryRules.toSeq)
   }
 }
+
+case class FieldToken(word: String) extends APIState {
+  override def isTerminal = true
+}
+
+object FieldRoot extends APIState
+
+object APIParameterGrammar {
+
+  type WeightedPhrases = Map[Seq[String], Double]
+
+  def apply(preTriggerPhrases: WeightedPhrases,
+            fieldGrammar: BinaryGrammar[APIState],
+            postTriggerPhrases: WeightedPhrases): (BinaryGrammar[APIState], Lexicon[APIState]) = ???
+}

@@ -22,7 +22,7 @@ class CFGParserSpec extends FlatSpec with Matchers {
       BPlus -> Seq(B))
     val p = new AgendaParser(grammar)
     val sent= Seq(A, B, B, B)
-    val (tree, weight) = p.parseSentence(sent).get
+    val (tree, weight) = p.parseStates(sent).get
     tree.leaves shouldBe sent
   }
 }

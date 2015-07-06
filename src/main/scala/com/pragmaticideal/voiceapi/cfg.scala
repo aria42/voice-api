@@ -32,18 +32,34 @@ case class NAryRule[S <: State](
       override val children: Seq[S],
       override val score: Double = 0.0) extends Rule[S]
 
+trait Lexicon[S <: State] {
+  def wordTrellis(words: Seq[String]): Seq[Map[S, Double]]
+}
+
 trait Grammar[S <: State] {
   def root: S
   def rules: Seq[Rule[S]]
+
   def states: Set[S] = (for {
     r <- rules
     s <- r.parent +: r.children
   } yield s).toSet
+
+  def terminalStates = states.filter(_.isTerminal)
+
+  def nonTerminalStates = states.filterNot(_.isTerminal)
+
+  /**
+   * A grammar may have a lexicon associated with it
+   */
+  def lexicon: Option[Lexicon[S]]
 }
+
 case class BinaryGrammar[S <: State](
       override val root: S,
       val unaryRules: Seq[UnaryRule[S]],
-      val binaryRules: Seq[BinaryRule[S]]) extends Grammar[S] {
+      val binaryRules: Seq[BinaryRule[S]],
+      override val lexicon: Option[Lexicon[S]] = None) extends Grammar[S] {
   type UR = UnaryRule[S]
   type BR = BinaryRule[S]
   // Index rules by children states
@@ -84,17 +100,16 @@ case class Branch[S <: State](override val state: S, override val children: Seq[
 // Parser
 trait Parser[S <: State]  {
 
-  def parse(weightedSentence: Seq[Map[S, Double]]): Option[(Tree[S], Double)]
+  def parseStates(states: Seq[S]): Option[(Tree[S], Double)] = parseTrellis(states.map(s => Map(s -> 0.0)))
 
-  /**
-   * If we have no uncertainty about the states associated with tokens,
-   * we can use this convenience method
-   */
-  def parseSentence(sentence: Seq[S]): Option[(Tree[S], Double)] = parse(sentence.map(s => Map(s -> 0.0)))
+  def parseTrellis(weightedStates: Seq[Map[S, Double]]): Option[(Tree[S], Double)]
+
+  def parseSentence(sentence: Seq[String]): Option[(Tree[S], Double)]
 }
 
-class AgendaParser[S <: State](val grammar: BinaryGrammar[S]) extends Parser[S] {
-
+class AgendaParser[S <: State](val grammar: BinaryGrammar[S])
+    extends Parser[S]
+{
   case class Edge(val tree: Tree[S], val span: (Int, Int), val score: Double) {
     def signature = EdgeSignature(tree.state, span)
     def length = span._2 - span._1
@@ -102,7 +117,12 @@ class AgendaParser[S <: State](val grammar: BinaryGrammar[S]) extends Parser[S] 
 
   case class EdgeSignature(val state: S, val span: (Int, Int))
 
-  override def parse(sentence: Seq[Map[S, Double]]): Option[(Tree[S], Double)] = {
+  override def parseSentence(sentence: Seq[String]): Option[(Tree[S], Double)] = {
+    require(grammar.lexicon.isDefined, "Need a lexicon to parse raw sentence")
+    parseTrellis(grammar.lexicon.get.wordTrellis(sentence))
+  }
+
+  override def parseTrellis(sentence: Seq[Map[S, Double]]): Option[(Tree[S], Double)] = {
     val n = sentence.length
     // Agenda is a PQ on edges priortized on span size, then on score
     val edgeOrdering = Ordering.by((e: Edge) => (e.length, -e.score))

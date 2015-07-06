@@ -17,7 +17,7 @@ class SlopPhraseGrammarTest extends FlatSpec with Matchers {
     val parser: Parser[APIState] = new AgendaParser(spg)
     for (sent <- phraseSentences) {
       val stateSent = sent.map(PhraseToken)
-      val (tree, score) = parser.parseSentence(stateSent).get
+      val (tree, score) = parser.parseStates(stateSent).get
       tree.leaves shouldBe sent.map(PhraseToken)
       score shouldBe 1.0
     }
@@ -37,7 +37,7 @@ class SlopPhraseGrammarTest extends FlatSpec with Matchers {
     for (sent <- sloppySentences) {
       val stateSent = sent.map(PhraseToken)
       val thrown = intercept[Exception] {
-        parser.parseSentence(stateSent)
+        parser.parseStates(stateSent)
       }
       assert(thrown != null)
     }
@@ -59,9 +59,22 @@ class SlopPhraseGrammarTest extends FlatSpec with Matchers {
         if (states.contains(token)) token
         else JunkToken
       }
-      val (tree, score) = parser.parse(stateSent).get
+      val (tree, score) = parser.parseTrellis(stateSent).get
       tree.leaves shouldBe expectedSent
     }
 
+  }
+
+  "A sloppy phrased grammar" should "should prefer parse with fewer junk" in {
+    val weightedPhrases = phraseSentences.map(_ -> 1.0).toMap
+    val spg = SlopPhraseGrammar(weightedPhrases, 2, 0.5)
+    val sents = phraseSentences
+    val parser: Parser[APIState] = new AgendaParser(spg)
+    for (sent <- sents) {
+      val stateSent = sent.map(PhraseToken)
+      val (tree, score) = parser.parseStates(stateSent).get
+      assert(tree.leaves.forall(_.isInstanceOf[PhraseToken]))
+
+    }
   }
 }
