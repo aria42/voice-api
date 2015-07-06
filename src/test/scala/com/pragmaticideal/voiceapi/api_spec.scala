@@ -77,4 +77,13 @@ class SlopPhraseGrammarTest extends FlatSpec with Matchers {
 
     }
   }
+
+  "A sloppy phrase grammar" should "have a working lexicon" in {
+    val weightedPhrases = phraseSentences.map(_ -> 1.0).toMap
+    val spg = SlopPhraseGrammar(weightedPhrases, 2, 0.5)
+    val parser: Parser[APIState] = new AgendaParser(spg)
+    for (sent <- sloppySentences ++ phraseSentences) {
+      assert(parser.parseSentence(sent).isDefined)
+    }
+  }
 }

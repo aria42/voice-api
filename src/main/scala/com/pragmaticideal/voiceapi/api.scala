@@ -76,7 +76,14 @@ object SlopPhraseGrammar {
       .filter(_.isInstanceOf[BinaryRule[S]])
       .map(_.asInstanceOf[BinaryRule[S]])
       .toSet
-    BinaryGrammar(root, unaryRules.toSeq, binaryRules.toSeq)
+    val allTerms: Set[String] = phrases.keys.flatMap(ks => ks).toSet
+    val lexicon = new Lexicon[APIState] {
+      override def wordTrellis(words: Seq[String]) = for (word <- words) yield {
+        if (allTerms(word)) Map(PhraseToken(word) -> 0.0, JunkToken -> 0.0)
+        else Map(JunkToken.asInstanceOf[APIState] -> 0.0)
+      }
+    }
+    BinaryGrammar(root, unaryRules.toSeq, binaryRules.toSeq, Some(lexicon))
   }
 }
 
