@@ -86,4 +86,17 @@ class SlopPhraseGrammarTest extends FlatSpec with Matchers {
       assert(parser.parseSentence(sent).isDefined)
     }
   }
+
+  "A field grammar" should "respect field weights" in {
+    val weigthedWords = Map("w1" -> 1.0, "w2" -> 2.0)
+    val fg = FieldGrammar(weigthedWords, 0.1, unkownScore = -0.5)
+    val parser: Parser[APIState] = new AgendaParser(fg)
+    val expectedPairs = Seq( (Seq("w1"), 1.0), (Seq("w1", "w2"), 3.0 - 0.1),
+      (Seq("w1", "junk", "w2"), 3.0 - 0.5 - 0.1 * 2))
+    for ((sent, expScore) <- expectedPairs) {
+      val (tree, score) = parser.parseSentence(sent).get
+      score shouldBe expScore
+      assert(tree.leaves.forall(x => x == FieldRoot || x == FieldToken))
+    }
+  }
 }

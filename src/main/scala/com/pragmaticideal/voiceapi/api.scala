@@ -87,11 +87,28 @@ object SlopPhraseGrammar {
   }
 }
 
-case class FieldToken(word: String) extends APIState {
+object FieldToken extends APIState {
   override def isTerminal = true
 }
 
 object FieldRoot extends APIState
+
+object FieldGrammar {
+  /**
+   * Field grammar is like a slop grammar, but it doesn't care about how many junk tokens there are. It's
+   * less about a canned phrase and intended for free text field arguments that might have some prefferred
+   * unigrams.
+   */
+  def apply(weightedWords: Map[String, Double], lengthPenalty: Double, unkownScore: Double = 0.0): BinaryGrammar[APIState] = {
+    val unaryRules = Seq(UnaryRule(FieldRoot, FieldToken))
+    val binaryRules = Seq(BinaryRule(FieldRoot, FieldRoot, FieldToken, -lengthPenalty))
+    val lexicon = new Lexicon[APIState] {
+      override def wordTrellis(words: Seq[String]) =
+        for (w <- words) yield Map(FieldToken.asInstanceOf[APIState] -> weightedWords.getOrElse(w, unkownScore))
+    }
+    BinaryGrammar(FieldRoot, unaryRules, binaryRules, Some(lexicon))
+  }
+}
 
 object APIParameterGrammar {
 

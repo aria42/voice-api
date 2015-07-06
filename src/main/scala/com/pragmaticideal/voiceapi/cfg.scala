@@ -33,6 +33,9 @@ case class NAryRule[S <: State](
       override val score: Double = 0.0) extends Rule[S]
 
 trait Lexicon[S <: State] {
+  /**
+   * Each of the state keys should be terminal grammar states
+   */
   def wordTrellis(words: Seq[String]): Seq[Map[S, Double]]
 }
 
