@@ -87,6 +87,20 @@ class SlopPhraseGrammarTest extends FlatSpec with Matchers {
       assert(parser.parseSentence(sent).isDefined)
     }
   }
+
+  "A sloppy phrase grammar" should "not allow negative max slop" in {
+    val weightedPhrases = phraseSentences.map(_ -> 1.0).toMap
+    intercept[IllegalArgumentException] {
+      SlopPhraseGrammar(weightedPhrases, -1, 0.5)
+    }
+  }
+  "A sloppy phrase grammar" should "not allow for negative weights" in {
+    val weightedPhrases = phraseSentences.map(_ -> 1.0).toMap
+    intercept[IllegalArgumentException] {
+      SlopPhraseGrammar(weightedPhrases, 1, -0.5)
+    }
+    SlopPhraseGrammar(weightedPhrases, 1, 0)
+  }
 }
 
 class FieldGrammarSpec extends FlatSpec with Matchers {

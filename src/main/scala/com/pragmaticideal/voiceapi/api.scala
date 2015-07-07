@@ -31,6 +31,7 @@ object SlopPhraseGrammar {
   private def slopRules(phrase: Seq[String], weight: Double, maxSlop: Int, junkPenalty: Double): Seq[R] = {
     val rules = mutable.ArrayBuffer[R]()
     // Top-level rule for each amount of junk, this has the weight of the phrase
+
     for (numJunk <- 0 to maxSlop) {
       // Root -> SlopPhrase(phrase, numJunk)
       rules += UnaryRule(SlopPhraseRoot, SlopPhrase(phrase, numJunk), weight - numJunk * junkPenalty)
@@ -64,6 +65,8 @@ object SlopPhraseGrammar {
   }
 
   def apply(phrases: Map[Seq[String], Double], maxSlop: Int, junkPenalty: Double): BinaryGrammar[APIState] = {
+    require(maxSlop >= 0, s"Max slop must be positive.")
+    require(junkPenalty >= 0, s"Penalties must be positive")
     val root = SlopPhraseRoot
     val allRules = phrases.flatMap {
       case (phrase, weight) => slopRules(phrase, weight, maxSlop, junkPenalty)
