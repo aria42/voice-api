@@ -99,6 +99,7 @@ class SlopPhraseGrammarTest extends FlatSpec with Matchers {
     intercept[IllegalArgumentException] {
       SlopPhraseGrammar(weightedPhrases, 1, -0.5)
     }
+    SlopPhraseGrammar(weightedPhrases, 1, 0)
   }
 }
 

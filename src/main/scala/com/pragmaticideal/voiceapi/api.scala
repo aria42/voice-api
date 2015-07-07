@@ -66,7 +66,7 @@ object SlopPhraseGrammar {
 
   def apply(phrases: Map[Seq[String], Double], maxSlop: Int, junkPenalty: Double): BinaryGrammar[APIState] = {
     require(maxSlop >= 0, s"Max slop must be positive.")
-    require(junkPenalty > 0.0, s"Penalties must be positive")
+    require(junkPenalty >= 0, s"Penalties must be positive")
     val root = SlopPhraseRoot
     val allRules = phrases.flatMap {
       case (phrase, weight) => slopRules(phrase, weight, maxSlop, junkPenalty)
