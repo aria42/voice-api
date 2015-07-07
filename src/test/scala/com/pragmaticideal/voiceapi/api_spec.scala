@@ -87,6 +87,19 @@ class SlopPhraseGrammarTest extends FlatSpec with Matchers {
       assert(parser.parseSentence(sent).isDefined)
     }
   }
+
+  "A sloppy phrase grammar" should "not allow negative max slop" in {
+    val weightedPhrases = phraseSentences.map(_ -> 1.0).toMap
+    intercept[IllegalArgumentException] {
+      SlopPhraseGrammar(weightedPhrases, -1, 0.5)
+    }
+  }
+  "A sloppy phrase grammar" should "not allow for negative weights" in {
+    val weightedPhrases = phraseSentences.map(_ -> 1.0).toMap
+    intercept[IllegalArgumentException] {
+      SlopPhraseGrammar(weightedPhrases, 1, -0.5)
+    }
+  }
 }
 
 class FieldGrammarSpec extends FlatSpec with Matchers {
@@ -108,7 +121,7 @@ class APIParameterSpec extends FlatSpec with Matchers {
 
   "A API parameter grammar" should "parse a simple search request" in {
     val preTriggerPhrases = Map(
-      Seq("looking", "for", "articles", "about") -> 1.0,
+      Seq("looking", "for", "articles", "about") -> -1.0,
       Seq("what's", "going", "on", "with") -> 1.0
     )
     val fieldGrammar = FieldGrammar(Map("business" -> 1.0, "obama" -> 1.0))
