@@ -17,6 +17,14 @@ brew install sbt
 sbt clean test
 ```
 
+## How to compute testing coverage
+
+```bash
+sbt clean coverage test
+sbt coverageReport
+open target/scala-2.11/scoverage-report/index.html
+```
+
 ## How to use an IDE
 
 It's vastly easier to code Scala in an IDE; IntelliJ is generally considered the strongest IDE (not just for Java, Scala, 
