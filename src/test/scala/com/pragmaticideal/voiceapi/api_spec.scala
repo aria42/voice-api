@@ -1,5 +1,6 @@
 package com.pragmaticideal.voiceapi.api
 
+import com.pragmaticideal.voiceapi.api.APIParameterGrammar.APIParameterDerivation
 import com.pragmaticideal.voiceapi.cfg.{Parser, AgendaParser}
 import org.scalatest.{Matchers, FlatSpec}
 
@@ -51,8 +52,8 @@ class SlopPhraseGrammarTest extends FlatSpec with Matchers {
     for (sent <- sloppySentences) {
       val stateSent: Seq[Map[APIState, Double]] = for(w <- sent) yield {
         val token = PhraseToken(w)
-        if (states.contains(token)) Map(token -> 0.0, JunkToken -> 0.0)
-        else Map(JunkToken.asInstanceOf[APIState] -> 0.0)
+        if (states.contains(token)) Map[APIState, Double](token -> 0.0, JunkToken -> 0.0)
+        else Map[APIState, Double](JunkToken -> 0.0)
       }
       val expectedSent = for (w <- sent) yield {
         val token = PhraseToken(w)
@@ -86,7 +87,9 @@ class SlopPhraseGrammarTest extends FlatSpec with Matchers {
       assert(parser.parseSentence(sent).isDefined)
     }
   }
+}
 
+class FieldGrammarSpec extends FlatSpec with Matchers {
   "A field grammar" should "respect field weights" in {
     val weigthedWords = Map("w1" -> 1.0, "w2" -> 2.0)
     val fg = FieldGrammar(weigthedWords, 0.1, unkownScore = -0.5)
@@ -98,5 +101,23 @@ class SlopPhraseGrammarTest extends FlatSpec with Matchers {
       score shouldBe expScore
       assert(tree.leaves.forall(x => x == FieldRoot || x == FieldToken))
     }
+  }
+}
+
+class APIParameterSpec extends FlatSpec with Matchers {
+
+  "A API parameter grammar" should "parse a simple search request" in {
+    val preTriggerPhrases = Map(
+      Seq("looking", "for", "articles", "about") -> 1.0,
+      Seq("what's", "going", "on", "with") -> 1.0
+    )
+    val fieldGrammar = FieldGrammar(Map("business" -> 1.0, "obama" -> 1.0))
+    val paramGrammar = APIParameterGrammar("search", preTriggerPhrases, fieldGrammar, Map())
+    val parser = new AgendaParser(paramGrammar)
+    val testSentence = Seq("looking", "for", "articles", "about", "obama")
+    val sent = Seq("looking", "for", "articles", "about", "obama")
+    val (tree, score) = parser.parseSentence(sent).get
+    val derivation = APIParameterDerivation.fromTree(tree, sent)
+    assert(derivation == Some(APIParameterDerivation("search", Seq("obama"))))
   }
 }
