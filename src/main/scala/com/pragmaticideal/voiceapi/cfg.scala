@@ -143,9 +143,9 @@ case class Branch[S <: State](override val state: S, override val children: Seq[
 // Parser
 trait Parser[S <: State]  {
 
-  def parseStates(states: Seq[S]): Option[(Tree[S], Double)] = parseTrellis(states.map(s => Map(s -> 0.0)))
+  def parseStates(states: Seq[S]): Option[(Tree[S], Double)] = parseLattice(states.map(s => Map(s -> 0.0)))
 
-  def parseTrellis(weightedStates: Seq[Map[S, Double]]): Option[(Tree[S], Double)]
+  def parseLattice(weightedStates: Seq[Map[S, Double]]): Option[(Tree[S], Double)]
 
   def parseSentence(sentence: Seq[String]): Option[(Tree[S], Double)]
 }
@@ -163,10 +163,10 @@ class AgendaParser[S <: State](val grammar: BinaryGrammar[S])
 
   override def parseSentence(sentence: Seq[String]): Option[(Tree[S], Double)] = {
     require(grammar.lexicon.isDefined, "Need a lexicon to parse raw sentence")
-    parseTrellis(grammar.lexicon.get.wordTrellis(sentence))
+    parseLattice(grammar.lexicon.get.wordTrellis(sentence))
   }
 
-  override def parseTrellis(sentence: Seq[Map[S, Double]]): Option[(Tree[S], Double)] = {
+  override def parseLattice(sentence: Seq[Map[S, Double]]): Option[(Tree[S], Double)] = {
     val n = sentence.length
     // Agenda is a PQ on edges priortized on span size, then on score
     val edgeOrdering = Ordering.by((e: Edge) => (-e.length, e.score))

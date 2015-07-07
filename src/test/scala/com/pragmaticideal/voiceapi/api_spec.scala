@@ -60,7 +60,7 @@ class SlopPhraseGrammarTest extends FlatSpec with Matchers {
         if (states.contains(token)) token
         else JunkToken
       }
-      val (tree, score) = parser.parseTrellis(stateSent).get
+      val (tree, score) = parser.parseLattice(stateSent).get
       tree.leaves shouldBe expectedSent
     }
 
