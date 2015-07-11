@@ -27,6 +27,7 @@ object VoiceAPIBuild extends Build {
         "org.scalacheck" %% "scalacheck" % "1.12.1" % "test" withSources() withJavadoc(),
         // Scalatra
         "org.scalatra" %% "scalatra" % scalatraVersion withSources() withJavadoc(),
+        "org.scalatra" %% "scalatra-scalate" % scalatraVersion withSources() withJavadoc(),
         "org.scalatra" %% "scalatra-json" % scalatraVersion withSources() withJavadoc(),
         // json4s
         "org.json4s" %% "json4s" % json4sVersion,

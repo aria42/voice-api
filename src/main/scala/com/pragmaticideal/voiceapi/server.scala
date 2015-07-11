@@ -3,10 +3,12 @@ package com.pragmaticideal.voiceapi
 import org.scalatra._
 import org.scalatra.json._
 import org.json4s.{DefaultFormats, Formats}
+import org.scalatra.scalate.ScalateSupport
 
 import scala.util.{Try, Success}
 
-class JsonAPI extends ScalatraServlet with JacksonJsonSupport  {
+// Everything in this servlet is a json API
+class JsonAPIServlet extends ScalatraServlet with JacksonJsonSupport  {
 
   // Sets up automatic case class to JSON output serialization
   protected implicit val jsonFormats: Formats = DefaultFormats
@@ -35,3 +37,17 @@ class JsonAPI extends ScalatraServlet with JacksonJsonSupport  {
     }
   }
 }
+
+// Sample for a webapp
+class WebappServlet extends ScalatraServlet with ScalateSupport {
+
+  before() {
+    contentType = "text/html"
+  }
+
+  get("/") {
+    // This will look up index.ssp inside of "/webapp/WEB-INF/templates/index.ssp"
+    ssp("/index", "title" -> "Some page title", "body" -> "Mmm, my body")
+  }
+}
+
