@@ -72,6 +72,84 @@ case class BinaryGrammar(
   override def rules = unaryRules ++ binaryRules
 }
 
+// A token of the user utterance explicit in grammar
+case class PhraseToken(val token: String) extends State {
+  override def isTerminal = true
+}
+
+// A token not matching what's in the grammar
+case object JunkToken extends State
+
+// State representing a complete canned phrase
+case class SlopPhrase(val phrase: Seq[String], val numJunk: Int) extends State
+
+// A slop phrase of any amount of junk
+case object SlopPhraseRoot extends State
+
+object SlopPhraseGrammar {
+
+  private def slopRules(phrase: Seq[String], weight: Double, maxSlop: Int, junkPenalty: Double): Seq[Rule] = {
+    val rules = mutable.ArrayBuffer[Rule]()
+    // Top-level rule for each amount of junk, this has the weight of the phrase
+
+    for (numJunk <- 0 to maxSlop) {
+      // Root -> SlopPhrase(phrase, numJunk)
+      rules += UnaryRule(SlopPhraseRoot, SlopPhrase(phrase, numJunk), weight - numJunk * junkPenalty)
+    }
+    // The grammar is left binarizing so need a special unary for rightmost token
+    rules += UnaryRule(SlopPhrase(Seq(phrase.last), 0), PhraseToken(phrase.last))
+    // Two types of binary rules
+    // Take an existing partial phrase and add a right junk token
+    rules ++= (for {
+      (word, idx) <- phrase.zipWithIndex
+      phraseSoFar = phrase.drop(idx)
+      numJunk <- 0 until maxSlop
+      parent = SlopPhrase(phraseSoFar, numJunk+1)
+      leftChild = SlopPhrase(phraseSoFar, numJunk)
+    } yield BinaryRule(parent, leftChild, JunkToken))
+    // Extend a partial phrase with a right phrase token
+    rules ++= (for {
+      (word, idx) <- phrase.zipWithIndex
+      if idx + 1 < phrase.length
+      before = phrase.drop(idx)
+      after = phrase.drop(idx+1)
+      numJunk <- 0 to maxSlop
+      parent = SlopPhrase(before, numJunk)
+      rightChild = SlopPhrase(after, numJunk)
+    } yield BinaryRule(parent, PhraseToken(word), rightChild))
+    // Junk token can be the first in the phrase (above rules only allow it
+    for (numJunk <- 0 until maxSlop) {
+      rules += BinaryRule(SlopPhrase(phrase, numJunk+1), JunkToken, SlopPhrase(phrase, numJunk))
+    }
+    rules
+  }
+
+  def apply(phrases: Map[Seq[String], Double], maxSlop: Int, junkPenalty: Double): BinaryGrammar = {
+    require(maxSlop >= 0, s"Max slop must be positive.")
+    require(junkPenalty >= 0, s"Penalties must be positive")
+    val root = SlopPhraseRoot
+    val allRules = phrases.flatMap {
+      case (phrase, weight) => slopRules(phrase, weight, maxSlop, junkPenalty)
+    }
+    val unaryRules = allRules
+      .filter(_.isInstanceOf[UnaryRule])
+      .map(_.asInstanceOf[UnaryRule])
+      .toSet
+    val binaryRules = allRules
+      .filter(_.isInstanceOf[BinaryRule])
+      .map(_.asInstanceOf[BinaryRule])
+      .toSet
+    val allTerms: Set[String] = phrases.keys.flatMap(ks => ks).toSet
+    val lexicon = new Lexicon {
+      override def wordTrellis(words: Seq[String]) = for (word <- words) yield {
+        if (allTerms(word)) Map[State,Double](PhraseToken(word) -> 0.0, JunkToken -> 0.0)
+        else Map[State,Double](JunkToken -> 0.0)
+      }
+    }
+    BinaryGrammar(root, unaryRules.toSeq, binaryRules.toSeq, Some(lexicon))
+  }
+}
+
 // convenience factory to be able to use X -> Y syntax for unweighted grammars
 object UnweightedBinaryGrammar {
   def apply[S <: State](root: S, xs: (S, Seq[S])*): BinaryGrammar = {
@@ -85,144 +163,28 @@ object UnweightedBinaryGrammar {
   }
 }
 
-// Tree Abstraction
-abstract class Tree(val state: State, val children: Seq[Tree]) {
-
-  def leaves: Seq[State]
-
-  def findFirstBFS(pred: State => Boolean): Option[Tree] = {
-    if (pred(this.state)) {
-      return Some(this)
-    }
-    children.map(_.findFirstBFS(pred)).find(_.isDefined) match {
-      case Some(x) => x
-      case None => None
-    }
-  }
-
-  def span: (Int, Int)
+case object FieldToken extends State {
+  override def isTerminal = true
 }
+case object FieldPhrase extends State
+case object FieldRoot extends State
 
-case class Leaf(override val state: State, val tokenIndex: Int) extends Tree(state, Seq()) {
-  override def leaves = Seq(state)
-
-  override def toString = state.toString
-
-  override def span = (tokenIndex, tokenIndex + 1)
-}
-
-case class Branch(override val state: State, override val children: Seq[Tree])
-  extends Tree(state, children)
-{
-  override def leaves = children.flatMap(_.leaves)
-
-  def treeString(indentLevel: Int): String = {
-    val build = new StringBuilder()
-    build.append("  " * indentLevel)
-    build.append("(" + state.toString)
-    val childStr = children.map(_.toString).mkString(" ")
-    if (childStr.length < 80) {
-      build.append(" ")
-      build.append(childStr)
-    } else {
-      build.append("\n")
-      build.append(children.map {
-        case b @ Branch(_, _)  => b.treeString(indentLevel+1)
-        case l @ Leaf(_, _) => l.toString
-      }.mkString(" "))
+object FieldGrammar {
+  /**
+   * Field grammar is like a slop grammar, but it doesn't care about how many junk tokens there are. It's
+   * less about a canned phrase and intended for free text field arguments that might have some prefferred
+   * unigrams.
+   */
+  def apply(weightedWords: Map[String, Double],
+            lengthPenalty: Double = 0.1,
+            unkownScore: Double = 0.0): BinaryGrammar =
+  {
+    val unaryRules = Seq(UnaryRule(FieldRoot, FieldPhrase), UnaryRule(FieldPhrase, FieldToken))
+    val binaryRules = Seq(BinaryRule(FieldPhrase, FieldPhrase, FieldToken, -lengthPenalty))
+    val lexicon = new Lexicon {
+      override def wordTrellis(words: Seq[String]) =
+        for (w <- words) yield Map(FieldToken.asInstanceOf[State] -> weightedWords.getOrElse(w, unkownScore))
     }
-    build.append(")")
-    build.toString
-  }
-
-  override  def toString = treeString(0)
-
-  override def span = (children.head.span._1, children.last.span._2)
-}
-
-// Parser
-trait Parser {
-
-  def parseStates(states: Seq[State]): Option[(Tree, Double)] = parseLattice(states.map(s => Map(s -> 0.0)))
-
-  def parseLattice(weightedStates: Seq[Map[State, Double]]): Option[(Tree, Double)]
-
-  def parseSentence(sentence: Seq[String]): Option[(Tree, Double)]
-}
-
-class AgendaParser(val grammar: BinaryGrammar) extends Parser {
-  case class Edge(val tree: Tree, val score: Double) {
-    def signature = EdgeSignature(tree.state, span)
-    def span = tree.span
-    def length = span._2 - span._1
-  }
-
-  case class EdgeSignature(val state: State, val span: (Int, Int))
-
-  override def parseSentence(sentence: Seq[String]): Option[(Tree, Double)] = {
-    require(grammar.lexicon.isDefined, "Need a lexicon to parse raw sentence")
-    parseLattice(grammar.lexicon.get.wordTrellis(sentence))
-  }
-
-  override def parseLattice(sentence: Seq[Map[State, Double]]): Option[(Tree, Double)] = {
-    val n = sentence.length
-    // Agenda is a PQ on edges priortized on span size, then on score
-    val edgeOrdering = Ordering.by((e: Edge) => (-e.length, e.score))
-    val agenda = mutable.PriorityQueue[Edge]()(edgeOrdering)
-    // Chart stores best (first-encountered) derivation of EdgeSignature
-    val chart = mutable.Map[EdgeSignature, Edge]()
-    // If you discover a new edge, add it to chart/agenda, explore later
-    def discoverEdge(edge: Edge) {
-      if (!chart.contains(edge.signature)) {
-        chart.put(edge.signature, edge)
-        agenda += edge
-      }
-    }
-    for (stateMap <- sentence; (state, weight) <- stateMap) {
-      require( grammar.unarysByChild.contains(state) ||
-               grammar.binarysByLefChild.contains(state) ||
-               grammar.binarysByRightmost.contains(state),
-        s"State $state not in grammar")
-    }
-    // base case: discover terminal edges
-    val terminalEdges = for {
-      (wmap, idx) <- sentence.zipWithIndex
-      (s, weight) <- wmap
-      leaf = Leaf(s, idx)
-    } yield Edge(leaf, weight)
-    terminalEdges.foreach(discoverEdge)
-    val goalSignature = EdgeSignature(grammar.root, (0, n))
-    // finished when we have a goal edge or out of edges
-    def isFinished = agenda.headOption.map(_.signature == goalSignature).getOrElse(true)
-    while (!isFinished) {
-      val e = agenda.dequeue
-      //println(agenda)
-      // unary expansion bottom-up
-      val unaryExpansion = for {
-        r <- grammar.unarysByChild.getOrElse(e.tree.state, Seq())
-        newTree = Branch(r.parent, Seq(e.tree))
-      } yield Edge(newTree, e.score + r.score)
-      val (start, stop) = e.span
-      // expand to right (start, stop) + (stop, laterStop)
-      val rightBinaryExpansion = for {
-        r <- grammar.binarysByLefChild.getOrElse(e.tree.state, Seq())
-        laterStop <- stop to n
-        rightEdge <- chart.get(EdgeSignature(r.rightChild, (stop, laterStop)))
-        newScore = r.score + e.score + rightEdge.score
-        newTree = Branch(r.parent, Seq(e.tree, rightEdge.tree))
-      } yield Edge(newTree, newScore)
-      // expand to left (earlierStart, start) + (start, stop)
-      val leftBinaryExpansion = for {
-        r <- grammar.binarysByRightmost.getOrElse(e.tree.state, Seq())
-        earlierStart <- 0 until start
-        leftEdge <- chart.get(EdgeSignature(r.leftChild, (earlierStart, start)))
-        newScore = r.score + e.score + leftEdge.score
-        newTree = Branch(r.parent, Seq(leftEdge.tree, e.tree))
-      } yield Edge(newTree, newScore)
-
-      val allNewEdges = unaryExpansion ++ rightBinaryExpansion ++ leftBinaryExpansion
-      allNewEdges.foreach(discoverEdge)
-    }
-    chart.get(goalSignature).map(e => (e.tree, e.score))
+    BinaryGrammar(FieldRoot, unaryRules, binaryRules, Some(lexicon))
   }
 }
