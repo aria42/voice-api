@@ -25,11 +25,8 @@ case object SlopPhraseRoot extends APIState
 
 object SlopPhraseGrammar {
 
-  type S = APIState
-  type R = Rule[S]
-
-  private def slopRules(phrase: Seq[String], weight: Double, maxSlop: Int, junkPenalty: Double): Seq[R] = {
-    val rules = mutable.ArrayBuffer[R]()
+  private def slopRules(phrase: Seq[String], weight: Double, maxSlop: Int, junkPenalty: Double): Seq[Rule] = {
+    val rules = mutable.ArrayBuffer[Rule]()
     // Top-level rule for each amount of junk, this has the weight of the phrase
 
     for (numJunk <- 0 to maxSlop) {
@@ -46,7 +43,7 @@ object SlopPhraseGrammar {
       numJunk <- 0 until maxSlop
       parent = SlopPhrase(phraseSoFar, numJunk+1)
       leftChild = SlopPhrase(phraseSoFar, numJunk)
-    } yield BinaryRule[APIState](parent, leftChild, JunkToken))
+    } yield BinaryRule(parent, leftChild, JunkToken))
     // Extend a partial phrase with a right phrase token
     rules ++= (for {
       (word, idx) <- phrase.zipWithIndex
@@ -56,7 +53,7 @@ object SlopPhraseGrammar {
       numJunk <- 0 to maxSlop
       parent = SlopPhrase(before, numJunk)
       rightChild = SlopPhrase(after, numJunk)
-    } yield BinaryRule(parent, PhraseToken(word), rightChild).asInstanceOf[R])
+    } yield BinaryRule(parent, PhraseToken(word), rightChild))
     // Junk token can be the first in the phrase (above rules only allow it
     for (numJunk <- 0 until maxSlop) {
       rules += BinaryRule(SlopPhrase(phrase, numJunk+1), JunkToken, SlopPhrase(phrase, numJunk))
@@ -64,7 +61,7 @@ object SlopPhraseGrammar {
     rules
   }
 
-  def apply(phrases: Map[Seq[String], Double], maxSlop: Int, junkPenalty: Double): BinaryGrammar[APIState] = {
+  def apply(phrases: Map[Seq[String], Double], maxSlop: Int, junkPenalty: Double): BinaryGrammar = {
     require(maxSlop >= 0, s"Max slop must be positive.")
     require(junkPenalty >= 0, s"Penalties must be positive")
     val root = SlopPhraseRoot
@@ -72,18 +69,18 @@ object SlopPhraseGrammar {
       case (phrase, weight) => slopRules(phrase, weight, maxSlop, junkPenalty)
     }
     val unaryRules = allRules
-      .filter(_.isInstanceOf[UnaryRule[S]])
-      .map(_.asInstanceOf[UnaryRule[S]])
+      .filter(_.isInstanceOf[UnaryRule])
+      .map(_.asInstanceOf[UnaryRule])
       .toSet
     val binaryRules = allRules
-      .filter(_.isInstanceOf[BinaryRule[S]])
-      .map(_.asInstanceOf[BinaryRule[S]])
+      .filter(_.isInstanceOf[BinaryRule])
+      .map(_.asInstanceOf[BinaryRule])
       .toSet
     val allTerms: Set[String] = phrases.keys.flatMap(ks => ks).toSet
-    val lexicon = new Lexicon[APIState] {
+    val lexicon = new Lexicon {
       override def wordTrellis(words: Seq[String]) = for (word <- words) yield {
-        if (allTerms(word)) Map[APIState,Double](PhraseToken(word) -> 0.0, JunkToken -> 0.0)
-        else Map[APIState,Double](JunkToken -> 0.0)
+        if (allTerms(word)) Map[State,Double](PhraseToken(word) -> 0.0, JunkToken -> 0.0)
+        else Map[State,Double](JunkToken -> 0.0)
       }
     }
     BinaryGrammar(root, unaryRules.toSeq, binaryRules.toSeq, Some(lexicon))
@@ -105,15 +102,15 @@ object FieldGrammar {
    */
   def apply(weightedWords: Map[String, Double],
             lengthPenalty: Double = 0.1,
-            unkownScore: Double = 0.0): BinaryGrammar[APIState] =
+            unkownScore: Double = 0.0): BinaryGrammar =
   {
-    val unaryRules = Seq(UnaryRule[APIState](FieldRoot, FieldPhrase), UnaryRule[APIState](FieldPhrase, FieldToken))
-    val binaryRules = Seq(BinaryRule[APIState](FieldPhrase, FieldPhrase, FieldToken, -lengthPenalty))
-    val lexicon = new Lexicon[APIState] {
+    val unaryRules = Seq(UnaryRule(FieldRoot, FieldPhrase), UnaryRule(FieldPhrase, FieldToken))
+    val binaryRules = Seq(BinaryRule(FieldPhrase, FieldPhrase, FieldToken, -lengthPenalty))
+    val lexicon = new Lexicon {
       override def wordTrellis(words: Seq[String]) =
-        for (w <- words) yield Map(FieldToken.asInstanceOf[APIState] -> weightedWords.getOrElse(w, unkownScore))
+        for (w <- words) yield Map(FieldToken.asInstanceOf[State] -> weightedWords.getOrElse(w, unkownScore))
     }
-    BinaryGrammar[APIState](FieldRoot, unaryRules, binaryRules, Some(lexicon))
+    BinaryGrammar(FieldRoot, unaryRules, binaryRules, Some(lexicon))
   }
 }
 
@@ -130,10 +127,10 @@ object APIParameterGrammar {
 
   def apply(name: String,
             preTarget: WeightedPhrases,
-            targetGrammar: BinaryGrammar[APIState],
+            targetGrammar: BinaryGrammar,
             postTarget: WeightedPhrases,
             maxSlop: Int = 2,
-            junkPenalty: Double = 0.5): BinaryGrammar[APIState] =
+            junkPenalty: Double = 0.5): BinaryGrammar =
   {
     val preTargetGrammar = SlopPhraseGrammar(preTarget, maxSlop, junkPenalty)
     val postTargetGrammar = SlopPhraseGrammar(postTarget, maxSlop, junkPenalty)
@@ -145,7 +142,7 @@ object APIParameterGrammar {
       targetGrammar.binaryRules
 
     val root = APIParameterRoot(name)
-    val topLevelUnarys = Seq[UnaryRule[APIState]](
+    val topLevelUnarys = Seq[UnaryRule](
       UnaryRule(APIParameterPreTarget, preTargetGrammar.root),
       UnaryRule(APIParameterPostTrigger, postTargetGrammar.root),
       UnaryRule(APIParameterTarget, targetGrammar.root),
@@ -153,12 +150,12 @@ object APIParameterGrammar {
       UnaryRule(root, APIParameterTargetWithPreTarget)
     )
 
-    val topLevelBinarys = Seq[BinaryRule[APIState]](
+    val topLevelBinarys = Seq[BinaryRule](
       BinaryRule(APIParameterTargetWithPreTarget, APIParameterPreTarget, APIParameterTarget),
       BinaryRule(root, APIParameterTargetWithPreTarget, APIParameterPostTrigger)
     )
 
-    val lexicon = new Lexicon[APIState] {
+    val lexicon = new Lexicon {
       override def wordTrellis(words: Seq[String]) = {
         val preTrellis = preTargetGrammar.lexicon.get.wordTrellis(words)
         val postTrellis = postTargetGrammar.lexicon.get.wordTrellis(words)
@@ -177,7 +174,7 @@ object APIParameterGrammar {
   case class APIParameterDerivation(name: String, field: Seq[String])
 
   object APIParameterDerivation {
-    def fromTree(tree: Tree[APIState], sent: Seq[String]): Option[APIParameterDerivation] = {
+    def fromTree(tree: Tree, sent: Seq[String]): Option[APIParameterDerivation] = {
       require(tree.state.isInstanceOf[APIParameterRoot], "Not a API parameter tree")
       require(tree.leaves.length == sent.length, "Tree needs to agree in length with sentence")
       val name: Option[String] = tree.state match {

@@ -6,44 +6,44 @@ trait State {
   def isTerminal = false
 }
 
-trait Rule[S <: State] {
-  def parent: S
-  def children: Seq[S]
+trait Rule {
+  def parent: State
+  def children: Seq[State]
   def score: Double
 }
 
-case class BinaryRule[S <: State](
-  override val parent: S,
-  val leftChild: S,
-  val rightChild: S,
-  override val score: Double = 0.0) extends Rule[S] {
+case class BinaryRule(
+  override val parent: State,
+  val leftChild: State,
+  val rightChild: State,
+  override val score: Double = 0.0) extends Rule {
   override def children = Seq(leftChild, rightChild)
 }
 
-case class UnaryRule[S <: State](
-      override val parent: S,
-      val child: S,
-      override val score: Double = 0.0) extends Rule[S] {
+case class UnaryRule(
+      override val parent: State,
+      val child: State,
+      override val score: Double = 0.0) extends Rule {
   override def children = Seq(child)
 }
 
-case class NAryRule[S <: State](
-      override val parent: S,
-      override val children: Seq[S],
-      override val score: Double = 0.0) extends Rule[S]
+case class NAryRule(
+      override val parent: State,
+      override val children: Seq[State],
+      override val score: Double = 0.0) extends Rule
 
-trait Lexicon[S <: State] {
+trait Lexicon {
   /**
    * Each of the state keys should be terminal grammar states
    */
-  def wordTrellis(words: Seq[String]): Seq[Map[S, Double]]
+  def wordTrellis(words: Seq[String]): Seq[Map[State, Double]]
 }
 
-trait Grammar[S <: State] {
-  def root: S
-  def rules: Seq[Rule[S]]
+trait Grammar {
+  def root: State
+  def rules: Seq[Rule]
 
-  def states: Set[S] = (for {
+  def states: Set[State] = (for {
     r <- rules
     s <- r.parent +: r.children
   } yield s).toSet
@@ -55,28 +55,28 @@ trait Grammar[S <: State] {
   /**
    * A grammar may have a lexicon associated with it
    */
-  def lexicon: Option[Lexicon[S]]
+  def lexicon: Option[Lexicon]
 }
 
-case class BinaryGrammar[S <: State](
-      override val root: S,
-      val unaryRules: Seq[UnaryRule[S]],
-      val binaryRules: Seq[BinaryRule[S]],
-      override val lexicon: Option[Lexicon[S]] = None) extends Grammar[S] {
-  type UR = UnaryRule[S]
-  type BR = BinaryRule[S]
+case class BinaryGrammar(
+      override val root: State,
+      val unaryRules: Seq[UnaryRule],
+      val binaryRules: Seq[BinaryRule],
+      override val lexicon: Option[Lexicon] = None) extends Grammar {
+  type UR = UnaryRule
+  type BR = BinaryRule
   // Index rules by children states
-  val unarysByChild: Map[S, Seq[UR]] = unaryRules.groupBy(_.child)
-  val binarysByLefChild: Map[S, Seq[BR]] = binaryRules.groupBy(_.leftChild)
-  val binarysByRightmost: Map[S , Seq[BR]] = binaryRules.groupBy(_.rightChild)
+  val unarysByChild: Map[State, Seq[UR]] = unaryRules.groupBy(_.child)
+  val binarysByLefChild: Map[State, Seq[BR]] = binaryRules.groupBy(_.leftChild)
+  val binarysByRightmost: Map[State, Seq[BR]] = binaryRules.groupBy(_.rightChild)
   override def rules = unaryRules ++ binaryRules
 }
 
 // convenience factory to be able to use X -> Y syntax for unweighted grammars
 object UnweightedBinaryGrammar {
-  def apply[S <: State](root: S, xs: (S, Seq[S])*): BinaryGrammar[S] = {
+  def apply[S <: State](root: S, xs: (S, Seq[S])*): BinaryGrammar = {
     val unaryRules = xs.filter(_._2.length == 1).map {
-      case (parent, Seq(child)) => UnaryRule[S](parent, child)
+      case (parent, Seq(child)) => UnaryRule(parent, child)
     }
     val binaryRules = xs.filter(_._2.length == 2).map {
       case (parent, Seq(left, right)) => BinaryRule(parent, left, right)
@@ -86,11 +86,11 @@ object UnweightedBinaryGrammar {
 }
 
 // Tree Abstraction
-abstract class Tree[S <: State](val state: S, val children: Seq[Tree[S]]) {
+abstract class Tree(val state: State, val children: Seq[Tree]) {
 
-  def leaves: Seq[S]
+  def leaves: Seq[State]
 
-  def findFirstBFS(pred: S => Boolean): Option[Tree[S]] = {
+  def findFirstBFS(pred: State => Boolean): Option[Tree] = {
     if (pred(this.state)) {
       return Some(this)
     }
@@ -103,7 +103,7 @@ abstract class Tree[S <: State](val state: S, val children: Seq[Tree[S]]) {
   def span: (Int, Int)
 }
 
-case class Leaf[S <: State](override val state: S, val tokenIndex: Int) extends Tree[S](state, Seq()) {
+case class Leaf(override val state: State, val tokenIndex: Int) extends Tree(state, Seq()) {
   override def leaves = Seq(state)
 
   override def toString = state.toString
@@ -111,8 +111,8 @@ case class Leaf[S <: State](override val state: S, val tokenIndex: Int) extends 
   override def span = (tokenIndex, tokenIndex + 1)
 }
 
-case class Branch[S <: State](override val state: S, override val children: Seq[Tree[S]])
-  extends Tree[S](state, children)
+case class Branch(override val state: State, override val children: Seq[Tree])
+  extends Tree(state, children)
 {
   override def leaves = children.flatMap(_.leaves)
 
@@ -141,32 +141,30 @@ case class Branch[S <: State](override val state: S, override val children: Seq[
 }
 
 // Parser
-trait Parser[S <: State]  {
+trait Parser {
 
-  def parseStates(states: Seq[S]): Option[(Tree[S], Double)] = parseLattice(states.map(s => Map(s -> 0.0)))
+  def parseStates(states: Seq[State]): Option[(Tree, Double)] = parseLattice(states.map(s => Map(s -> 0.0)))
 
-  def parseLattice(weightedStates: Seq[Map[S, Double]]): Option[(Tree[S], Double)]
+  def parseLattice(weightedStates: Seq[Map[State, Double]]): Option[(Tree, Double)]
 
-  def parseSentence(sentence: Seq[String]): Option[(Tree[S], Double)]
+  def parseSentence(sentence: Seq[String]): Option[(Tree, Double)]
 }
 
-class AgendaParser[S <: State](val grammar: BinaryGrammar[S])
-    extends Parser[S]
-{
-  case class Edge(val tree: Tree[S], val score: Double) {
+class AgendaParser(val grammar: BinaryGrammar) extends Parser {
+  case class Edge(val tree: Tree, val score: Double) {
     def signature = EdgeSignature(tree.state, span)
     def span = tree.span
     def length = span._2 - span._1
   }
 
-  case class EdgeSignature(val state: S, val span: (Int, Int))
+  case class EdgeSignature(val state: State, val span: (Int, Int))
 
-  override def parseSentence(sentence: Seq[String]): Option[(Tree[S], Double)] = {
+  override def parseSentence(sentence: Seq[String]): Option[(Tree, Double)] = {
     require(grammar.lexicon.isDefined, "Need a lexicon to parse raw sentence")
     parseLattice(grammar.lexicon.get.wordTrellis(sentence))
   }
 
-  override def parseLattice(sentence: Seq[Map[S, Double]]): Option[(Tree[S], Double)] = {
+  override def parseLattice(sentence: Seq[Map[State, Double]]): Option[(Tree, Double)] = {
     val n = sentence.length
     // Agenda is a PQ on edges priortized on span size, then on score
     val edgeOrdering = Ordering.by((e: Edge) => (-e.length, e.score))
