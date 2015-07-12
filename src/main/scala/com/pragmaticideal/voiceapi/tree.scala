@@ -3,7 +3,7 @@ package com.pragmaticideal.voiceapi.tree
 import com.pragmaticideal.voiceapi.cfg.{State}
 
 // Tree Abstraction
-abstract class Tree(val state: State, val children: Seq[Tree]) {
+sealed abstract class Tree(val state: State, val children: Seq[Tree]) {
 
   def leaves: Seq[State]
 
@@ -21,6 +21,8 @@ abstract class Tree(val state: State, val children: Seq[Tree]) {
 }
 
 case class Leaf(override val state: State, val tokenIndex: Int) extends Tree(state, Seq()) {
+  require(tokenIndex >= 0)
+
   override def leaves = Seq(state)
 
   override def toString = state.toString
@@ -31,6 +33,11 @@ case class Leaf(override val state: State, val tokenIndex: Int) extends Tree(sta
 case class Branch(override val state: State, override val children: Seq[Tree])
   extends Tree(state, children)
 {
+  require(children.combinations(2).forall {
+    case Seq(child, nextChild) => child.span._2 == nextChild.span._1
+  }, "Spans of children should represent adjacent spans with no overlap, gap")
+
+
   override def leaves = children.flatMap(_.leaves)
 
   def treeString(indentLevel: Int): String = {
