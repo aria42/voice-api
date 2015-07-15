@@ -24,6 +24,25 @@ sbt clean coverage test
 sbt coverageReport
 open target/scala-2.11/scoverage-report/index.html
 ```
+## How to start server
+
+```bash
+sbt
+// This starts the server
+> container:start
+// Open browser to localhost and port
+> browse
+// After you make a change to code, you can 
+> container:restart
+// Then you can reload the webpage
+```
+
+## Current Servlets
+
+There are two servlets:
+
+* `/app/`: The webapp
+* `/api/0.1/`: The JSON api route
 
 ## How to use an IDE
 
