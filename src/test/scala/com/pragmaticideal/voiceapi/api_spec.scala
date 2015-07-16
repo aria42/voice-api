@@ -20,10 +20,8 @@ class APIParameterJsonSpec extends FlatSpec with Matchers {
         }
       """.stripMargin
     implicit val formats = APIParameterSpec.formats
-    val jsonObj = JsonMethods.parse(json)
-    val apiSpec = jsonObj.extract[APIParameterSpec]
-    apiSpec.grammarData shouldBe
-      SimpleUnigramFieldAPIParameter(Map("word3" -> 1.0, "word4" -> 2.0), expectedLength = 2)
+    val apiSpec: APIParameterSpec = JsonMethods.parse(json).extract[APIParameterSpec]
+    apiSpec.grammarData shouldBe SimpleUnigramFieldParams(Map("word3" -> 1.0, "word4" -> 2.0), expectedLength = 2)
   }
 }
 
@@ -38,7 +36,7 @@ class APIParameterGrammarSpec extends FlatSpec with Matchers {
     val preTriggerSpec = CannedPhraseGrammarSpec(
       (preTriggerPhrases.map { case (p,w) => WeightedPhrase(p,w) }).toSeq,
       maxJunk = 1)
-    val fieldGrammar = SimpleUnigramFieldAPIParameter(Map("business" -> 1.0, "obama" -> 1.0), 2)
+    val fieldGrammar = SimpleUnigramFieldParams(Map("business" -> 1.0, "obama" -> 1.0), 2)
     val paramGrammar = new APIParameterSpec("search", fieldGrammar, Some(preTriggerSpec))
     val parser = new AgendaParser(paramGrammar.asGrammar)
     val testSentence = Seq("looking", "for", "articles", "about", "obama")

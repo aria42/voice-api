@@ -106,7 +106,7 @@ object APIParameterSpec {
         // value and extract an instance from rest of JSON object with approriate class
         case JObject(JField("_type", JString(grammarType)) :: rest) => {
           grammarType match {
-            case "unigram" => JObject(rest).extract[SimpleUnigramFieldAPIParameter]
+            case "unigram" => JObject(rest).extract[SimpleUnigramFieldParams]
             case _ => throw new MappingException(s"Unknown type $grammarType")
           }
 
@@ -121,7 +121,7 @@ object APIParameterSpec {
           import org.json4s.JsonDSL._
           val rest = Extraction.decompose(obj).asInstanceOf[JObject]
           rest ~ ("_type", obj match {
-            case _ : SimpleUnigramFieldAPIParameter => "unigram"
+            case _ : SimpleUnigramFieldParams => "unigram"
             case _ => throw new MappingException(s"Don't have a short type-hint for ${obj.getClass.getSimpleName}")
           })
       }
@@ -132,7 +132,7 @@ object APIParameterSpec {
   }
 }
 
-case class SimpleUnigramFieldAPIParameter(
+case class SimpleUnigramFieldParams(
     val wordScores: Map[String, Double],
     val expectedLength: Int,
     val unknownWordProb: Double = 0.01) extends GrammarFactory {
