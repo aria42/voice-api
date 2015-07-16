@@ -114,11 +114,15 @@ object APIParameterSpec {
         case other => throw new MappingException(s"Unable to map $other")
       },
       {
+        // To Serialize to JSON, serialize the object itself and then
+        // provide the "_type" type-hint key based on the class. Must
+        // be symmetrical with deserialization aboe
         case obj =>
           import org.json4s.JsonDSL._
           val rest = Extraction.decompose(obj).asInstanceOf[JObject]
           rest ~ ("_type", obj match {
             case _ : SimpleUnigramFieldAPIParameter => "unigram"
+            case _ => throw new MappingException(s"Don't have a short type-hint for ${obj.getClass.getSimpleName}")
           })
       }
     ))
