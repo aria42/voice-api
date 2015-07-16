@@ -21,6 +21,8 @@ class APIParameterJsonSpec extends FlatSpec with Matchers {
       """.stripMargin
     implicit val formats = APIParameterSpec.formats
     val apiSpec: APIParameterSpec = JsonMethods.parse(json).extract[APIParameterSpec]
+    apiSpec.preParameter shouldBe Some(CannedPhraseGrammarSpec(Seq(WeightedPhrase(Seq("word1", "word2"), 1.0)), 1))
+    apiSpec.name shouldBe "some-param"
     apiSpec.grammarData shouldBe SimpleUnigramFieldParams(Map("word3" -> 1.0, "word4" -> 2.0), expectedLength = 2)
   }
 }
